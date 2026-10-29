@@ -2,9 +2,14 @@ name: Sprawdź terminy WOMP
 
 on:
   schedule:
-    # Co 30 minut (czas UTC). GitHub może opóźnić start o kilka–kilkanaście minut.
+    # Co 5 minut. GitHub może opóźnić start o kilka–kilkanaście minut.
     - cron: "*/5 * * * *"
-  workflow_dispatch: {}   # ręczne uruchomienie z zakładki Actions
+  workflow_dispatch:      # ręczne uruchomienie z zakładki Actions
+    inputs:
+      test_email:
+        description: "Wyślij testowego maila (stan nie zostanie zmieniony)"
+        type: boolean
+        default: false
 
 # Potrzebne, żeby akcja mogła zacommitować last_date.txt
 permissions:
@@ -21,10 +26,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -40,12 +45,14 @@ jobs:
           SMTP_PASS:   ${{ secrets.SMTP_PASS }}
           MAIL_TO:     ${{ secrets.MAIL_TO }}
           MAIL_FROM:   ${{ secrets.MAIL_FROM }}
+          TEST_EMAIL:  ${{ inputs.test_email || 'false' }}
         run: python monitor.py
 
       - name: Zapisz stan (commit last_date.txt, jeśli się zmienił)
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          [ -f last_date.txt ] || exit 0
           git add last_date.txt
           if git diff --cached --quiet; then
             echo "Stan bez zmian – brak commita."
