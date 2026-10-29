@@ -3,7 +3,7 @@ name: Sprawdź terminy WOMP
 on:
   schedule:
     # Co 30 minut (czas UTC). GitHub może opóźnić start o kilka–kilkanaście minut.
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}   # ręczne uruchomienie z zakładki Actions
 
 # Potrzebne, żeby akcja mogła zacommitować last_date.txt
