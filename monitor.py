@@ -58,6 +58,9 @@ DATE_FMT = "%Y-%m-%d %H:%M"  # format zwracany przez API, np. "2027-01-14 07:00"
 # Czy wysłać maila przy pierwszym uruchomieniu (brak pliku stanu)?
 NOTIFY_ON_FIRST_RUN = os.getenv("NOTIFY_ON_FIRST_RUN", "false").lower() == "true"
 
+# Tryb testowy: wysyła maila z aktualnym terminem i NIE zmienia pliku stanu.
+TEST_EMAIL = os.getenv("TEST_EMAIL", "false").lower() == "true"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -213,7 +216,7 @@ def require_env(name: str) -> str:
     return value
 
 
-def send_email(new: datetime, old: datetime | None) -> None:
+def send_email(new: datetime | None, old: datetime | None, test: bool = False) -> None:
     server = require_env("SMTP_SERVER")
     port = int(os.getenv("SMTP_PORT", "465"))
     user = require_env("SMTP_USER")
@@ -222,17 +225,27 @@ def send_email(new: datetime, old: datetime | None) -> None:
     mail_from = os.getenv("MAIL_FROM") or user
 
     old_txt = old.strftime(DATE_FMT) if old else "brak"
+    new_txt = new.strftime(DATE_FMT) if new else "brak wolnych terminów"
     msg = EmailMessage()
-    msg["Subject"] = f"WOMP: wcześniejszy termin {new:%d.%m.%Y %H:%M}"
     msg["From"] = mail_from
     msg["To"] = mail_to
-    msg.set_content(
-        "Zwolnił się wcześniejszy termin badania w Poradni dla Kierowców WOMP.\n\n"
-        f"Nowy najbliższy termin:  {new:%Y-%m-%d %H:%M}\n"
-        f"Poprzednio widziany:     {old_txt}\n\n"
-        f"Rezerwacja: {BOOKING_PAGE}\n\n"
-        "Terminy szybko znikają – warto zarezerwować od razu.\n"
-    )
+    if test:
+        msg["Subject"] = "WOMP monitor: testowy e-mail"
+        msg.set_content(
+            "To jest wiadomość testowa – konfiguracja SMTP działa.\n\n"
+            f"Aktualny najbliższy termin: {new_txt}\n"
+            f"Zapisany w stanie:          {old_txt}\n\n"
+            f"Rezerwacja: {BOOKING_PAGE}\n"
+        )
+    else:
+        msg["Subject"] = f"WOMP: wcześniejszy termin {new:%d.%m.%Y %H:%M}"
+        msg.set_content(
+            "Zwolnił się wcześniejszy termin badania w Poradni dla Kierowców WOMP.\n\n"
+            f"Nowy najbliższy termin:  {new_txt}\n"
+            f"Poprzednio widziany:     {old_txt}\n\n"
+            f"Rezerwacja: {BOOKING_PAGE}\n\n"
+            "Terminy szybko znikają – warto zarezerwować od razu.\n"
+        )
 
     context = ssl.create_default_context()
     if port == 465:  # SSL od początku połączenia (np. Gmail, Onet, WP)
@@ -260,6 +273,16 @@ def main() -> int:
         return 1  # stan pozostaje nietknięty
 
     old_term = load_state()
+
+    if TEST_EMAIL:
+        # Tryb testowy: tylko wysyłka, bez porównania i bez zapisu stanu.
+        try:
+            send_email(new_term, old_term, test=True)
+        except (smtplib.SMTPException, OSError, RuntimeError) as exc:
+            log.error("Błąd wysyłki testowego e-maila: %s", exc)
+            return 1
+        return 0
+
     log.info(
         "Najbliższy termin: %s | zapisany: %s",
         new_term.strftime(DATE_FMT) if new_term else "brak",
